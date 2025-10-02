@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bad Debt Report Generator</title>
+    <!-- Tailwind CSS for styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- PapaParse for parsing CSV files -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        /* Custom styles for better UX */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .file-input-label {
+            transition: all 0.2s ease-in-out;
+        }
+        .file-input-label:hover {
+            background-color: #e9e9e9;
+        }
+        #loader {
+            border-top-color: #3498db;
+            animation: spin 1s linear infinite;
+        }
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+<body class="bg-gray-100 text-gray-800">
+
+    <div class="container mx-auto p-4 sm:p-6 lg:p-8">
+        <header class="text-center mb-8">
+            <h1 class="text-3xl sm:text-4xl font-bold text-gray-700">Bad Debt Report Generator</h1>
+            <p class="text-gray-500 mt-2">Upload your CSV files to automatically generate the report.</p>
+        </header>
+
+        <!-- File Upload Section -->
+        <div class="max-w-4xl mx-auto bg-white p-6 rounded-lg shadow-md mb-8">
+            <h2 class="text-xl font-semibold mb-4 border-b pb-2">Upload Files</h2>
+            <div id="file-upload-section" class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Sheet 1 -->
+                <div>
+                    <label for="sheet1" class="block text-sm font-medium text-gray-700 mb-1">Sheet 1 (Loan Data)</label>
+                    <input type="file" id="sheet1" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100 cursor-pointer">
+                </div>
+                <!-- Sheet 2 -->
+                <div>
+                    <label for="sheet2" class="block text-sm font-medium text-gray-700 mb-1">Sheet 2 (Status Data)</label>
+                    <input type="file" id="sheet2" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-green-50 file:text-green-700 hover:file:bg-green-100 cursor-pointer">
+                </div>
+                <!-- Sheet 3 -->
+                <div>
+                    <label for="sheet3" class="block text-sm font-medium text-gray-700 mb-1">Sheet 3 (Recovery Data)</label>
+                    <input type="file" id="sheet3" accept=".csv" class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-md file:border-0 file:text-sm file:font-semibold file:bg-yellow-50 file:text-yellow-700 hover:file:bg-yellow-100 cursor-pointer">
+                </div>
+            </div>
+            <div class="mt-6 text-center">
+                <button id="generate-report-btn" class="bg-blue-600 text-white font-bold py-2 px-6 rounded-lg hover:bg-blue-700 transition duration-300 disabled:bg-gray-400 disabled:cursor-not-allowed">
+                    Generate Report
+                </button>
+            </div>
+            <div id="error-message" class="text-red-500 text-center mt-4 font-medium"></div>
+            <div id="loader" class="hidden mx-auto mt-4 w-8 h-8 border-4 border-gray-200 rounded-full"></div>
+        </div>
+
+        <!-- Results Section -->
+        <div id="results-section" class="hidden">
+            <!-- Summary Cards -->
+            <div class="max-w-4xl mx-auto mb-8">
+                 <h2 class="text-xl font-semibold mb-4 border-b pb-2">Report Summary</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="bg-white p-6 rounded-lg shadow-md text-center">
+                        <h3 class="text-lg font-semibold text-gray-600">Open 'Defaulted' Cases</h3>
+                        <p id="defaulted-cases-count" class="text-4xl font-bold text-red-600 mt-2">0</p>
+                    </div>
+                    <div class="bg-white p-6 rounded-lg shadow-md text-center">
+                        <h3 class="text-lg font-semibold text-gray-600">Total Outstanding (Defaulted Cases)</h3>
+                        <p id="total-outstanding-balance" class="text-4xl font-bold text-red-600 mt-2">£0.00</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Detailed Report Table -->
+            <div class="bg-white p-4 sm:p-6 rounded-lg shadow-md">
+                 <h2 class="text-xl font-semibold mb-4 border-b pb-2">Detailed Bad Debt Report</h2>
+                <div class="overflow-x-auto">
+                    <table id="report-table" class="min-w-full divide-y divide-gray-200">
+                        <thead class="bg-gray-50">
+                            <!-- Headers will be injected here by JavaScript -->
+                        </thead>
+                        <tbody class="bg-white divide-y divide-gray-200">
+                            <!-- Rows will be injected here by JavaScript -->
+                        </tbody>
+                        <tfoot class="bg-gray-100 font-bold">
+                            <!-- Totals will be injected here by JavaScript -->
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const sheet1Input = document.getElementById('sheet1');
+        const sheet2Input = document.getElementById('sheet2');
+        const sheet3Input = document.getElementById('sheet3');
+        const generateBtn = document.getElementById('generate-report-btn');
+        const errorMessage = document.getElementById('error-message');
+        const resultsSection = document.getElementById('results-section');
+        const loader = document.getElementById('loader');
+
+        // Helper function to format numbers as currency
+        const formatCurrency = (value) => {
+            return new Intl.NumberFormat('en-GB', { style: 'currency', currency: 'GBP' }).format(value);
+        };
+
+        // Function to parse a CSV file and return a promise
+        const parseFile = (file, options = {}) => {
+            return new Promise((resolve, reject) => {
+                if (!file) {
+                    reject(new Error("File not selected."));
+                    return;
+                }
+                const config = {
+                    header: true,
+                    skipEmptyLines: true,
+                    transformHeader: header => header.trim(),
+                    ...options, // Allow overriding default options
+                };
+                Papa.parse(file, {
+                    ...config,
+                    complete: (results) => resolve(results.data),
+                    error: (error) => reject(error),
+                });
+            });
+        };
+
+        // Main function to generate the report
+        const generateReport = async () => {
+            // 1. Clear previous state and show loader
+            errorMessage.textContent = '';
+            resultsSection.classList.add('hidden');
+            loader.classList.remove('hidden');
+            generateBtn.disabled = true;
+
+            // 2. Check if all files are selected
+            if (!sheet1Input.files[0] || !sheet2Input.files[0] || !sheet3Input.files[0]) {
+                errorMessage.textContent = 'Please upload all three CSV files.';
+                loader.classList.add('hidden');
+                generateBtn.disabled = false;
+                return;
+            }
+
+            try {
+                // 3. Parse all files concurrently
+                const [sheet1Data, sheet2Data, sheet3Data] = await Promise.all([
+                    parseFile(sheet1Input.files[0]),
+                    parseFile(sheet2Input.files[0], { header: false }), // FIX: Parse Sheet 2 by position, not header name
+                    parseFile(sheet3Input.files[0]),
+                ]);
+                
+                // 4. Create lookup maps for efficient data retrieval
+                // FIX: Build Sheet 2 map using column index (A=0, BF=57) and skip header row
+                const sheet2Map = new Map();
+                // Start from 1 to skip the header row in Sheet 2
+                for (let i = 1; i < sheet2Data.length; i++) {
+                    const row = sheet2Data[i];
+                    const id = row[0] ? String(row[0]).trim() : null; // Column A
+                    const status = row[57] ? String(row[57]).trim() : 'N/A'; // Column BF
+                    if (id) {
+                        sheet2Map.set(id, status);
+                    }
+                }
+
+                const sheet3Map = new Map(sheet3Data.map(row => [row['Auction Id'], {
+                    recoveredPrincipal: parseFloat((row['Recovered Principal'] || '0').replace(/,/g, '')),
+                    recoveredInterest: parseFloat((row['Recovered Interest'] || '0').replace(/,/g, '')),
+                }]));
+
+                // 5. Process the data
+                const badDebtLoans = sheet1Data.filter(row => row['Loan status'] === 'Bad Debt');
+
+                let totalPrincipalRemaining = 0;
+                let totalPrincipalRecovered = 0;
+                let totalInterestRecovered = 0;
+                let totalOutstanding = 0;
+
+                const reportData = badDebtLoans.map(loan => {
+                    // FIX: Trim Loan ID from Sheet 1 to ensure a clean match
+                    const loanId = loan['Loan ID'] ? String(loan['Loan ID']).trim() : null;
+
+                    const recoveryStatus = sheet2Map.get(loanId) || 'N/A';
+                    const recoveryData = sheet3Map.get(loanId) || { recoveredPrincipal: 0, recoveredInterest: 0 };
+                    const principalRemaining = parseFloat((loan['Principal remaining'] || '0').replace(/,/g, ''));
+                    const principalRecovered = recoveryData.recoveredPrincipal;
+                    const interestRecovered = recoveryData.recoveredInterest;
+                    const outstandingBalance = principalRemaining - principalRecovered - interestRecovered;
+                    
+                    totalPrincipalRemaining += principalRemaining;
+                    totalPrincipalRecovered += principalRecovered;
+                    totalInterestRecovered += interestRecovered;
+                    totalOutstanding += outstandingBalance;
+
+                    return {
+                        'Loan ID': loanId,
+                        'Principal at Default': principalRemaining,
+                        'Recovery Status': recoveryStatus,
+                        'Principal Recovered': principalRecovered,
+                        'Interest Recovered': interestRecovered,
+                        'Outstanding Balance': outstandingBalance,
+                    };
+                });
+
+                // Sort the data to show 'defaulted' cases at the top
+                reportData.sort((a, b) => {
+                    if (a['Recovery Status'] === 'defaulted' && b['Recovery Status'] !== 'defaulted') {
+                        return -1; // a comes first
+                    }
+                    if (b['Recovery Status'] === 'defaulted' && a['Recovery Status'] !== 'defaulted') {
+                        return 1; // b comes first
+                    }
+                    return 0; // no change in order for other cases
+                });
+
+                // 6. Calculate summary metrics for 'defaulted' loans
+                const defaultedLoans = reportData.filter(loan => loan['Recovery Status'] === 'defaulted');
+                const defaultedCasesCount = defaultedLoans.length;
+                const totalOutstandingForDefaulted = defaultedLoans.reduce((sum, loan) => sum + loan['Outstanding Balance'], 0);
+                
+                // 7. Display summary and table
+                displaySummary(defaultedCasesCount, totalOutstandingForDefaulted);
+                displayTable(reportData, {totalPrincipalRemaining, totalPrincipalRecovered, totalInterestRecovered, totalOutstanding});
+                resultsSection.classList.remove('hidden');
+
+            } catch (error) {
+                console.error("Error generating report:", error);
+                errorMessage.textContent = 'An error occurred while processing the files. Please check the console.';
+            } finally {
+                // 8. Hide loader and re-enable button
+                loader.classList.add('hidden');
+                generateBtn.disabled = false;
+            }
+        };
+
+        // Function to display the summary cards
+        const displaySummary = (count, total) => {
+            document.getElementById('defaulted-cases-count').textContent = count;
+            document.getElementById('total-outstanding-balance').textContent = formatCurrency(total);
+        };
+        
+        // Function to dynamically build and display the results table
+        const displayTable = (data, totals) => {
+            const table = document.getElementById('report-table');
+            const thead = table.querySelector('thead');
+            const tbody = table.querySelector('tbody');
+            const tfoot = table.querySelector('tfoot');
+            
+            thead.innerHTML = '';
+            tbody.innerHTML = '';
+            tfoot.innerHTML = '';
+
+            if (data.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" class="text-center py-4">No bad debt loans found in the provided file.</td></tr>';
+                return;
+            }
+
+            const headers = Object.keys(data[0]);
+            const headerRow = document.createElement('tr');
+            headers.forEach(headerText => {
+                const th = document.createElement('th');
+                th.scope = 'col';
+                th.className = 'px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider';
+                th.textContent = headerText;
+                headerRow.appendChild(th);
+            });
+            thead.appendChild(headerRow);
+            
+            data.forEach(rowData => {
+                const row = document.createElement('tr');
+                headers.forEach(header => {
+                    const cell = document.createElement('td');
+                    cell.className = 'px-6 py-4 whitespace-nowrap text-sm';
+                    let value = rowData[header];
+                    if (['Principal at Default', 'Principal Recovered', 'Interest Recovered', 'Outstanding Balance'].includes(header)) {
+                         cell.textContent = formatCurrency(value);
+                         cell.classList.add('text-right');
+                    } else {
+                         cell.textContent = value;
+                    }
+                    row.appendChild(cell);
+                });
+                tbody.appendChild(row);
+            });
+
+            const footerRow = document.createElement('tr');
+            footerRow.innerHTML = `
+                <td class="px-6 py-3 text-sm text-left" colspan="1"><strong>Totals</strong></td>
+                <td class="px-6 py-3 text-sm text-right">${formatCurrency(totals.totalPrincipalRemaining)}</td>
+                <td class="px-6 py-3"></td> <!-- Empty cell for status -->
+                <td class="px-6 py-3 text-sm text-right">${formatCurrency(totals.totalPrincipalRecovered)}</td>
+                <td class="px-6 py-3 text-sm text-right">${formatCurrency(totals.totalInterestRecovered)}</td>
+                <td class="px-6 py-3 text-sm text-right">${formatCurrency(totals.totalOutstanding)}</td>
+            `;
+            tfoot.appendChild(footerRow);
+        };
+
+        generateBtn.addEventListener('click', generateReport);
+    </script>
+
+</body>
+</html>
+
