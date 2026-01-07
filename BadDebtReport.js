@@ -122,7 +122,12 @@
                 // 6. Calculate summary metrics for 'defaulted' loans
                 const defaultedLoans = reportData.filter(loan => loan['Recovery Status'] === 'defaulted');
                 const defaultedCasesCount = defaultedLoans.length;
-                const totalOutstandingForDefaulted = defaultedLoans.reduce((sum, loan) => sum + loan['Outstanding Balance'], 0);
+                
+                // MODIFIED: Exclude negative balances (over-recoveries) from the total outstanding sum
+                const totalOutstandingForDefaulted = defaultedLoans.reduce((sum, loan) => {
+                    const balance = loan['Outstanding Balance'];
+                    return sum + (balance > 0 ? balance : 0);
+                }, 0);
                 
                 // 7. Display summary and table
                 displaySummary(defaultedCasesCount, totalOutstandingForDefaulted);
